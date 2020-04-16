@@ -1,0 +1,36 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "esModuleInterop": true,
+        "noImplicitAny": true,
+        "moduleResolution": "node",
+        "sourceMap": true,
+        "outDir": "dist",
+        "baseUrl": ".",
+        "paths": {
+            "*": [
+                "node_modules/*",
+                "src/types/*"
+            ]
+        },
+        "removeComments": true,
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "incremental": true,
+        "target": "ES2018",
+        "allowJs": true,
+        "noImplicitReturns": true
+    },
+    "typeRoots": [
+        "node_module/@types"
+    ],
+    "include": [
+        "src/**/*",
+        "customTypings/**/*"
+    ],
+    "exclude": [
+        "dist",
+        "node_modules"
+    ]
+}
