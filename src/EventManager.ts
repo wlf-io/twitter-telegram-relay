@@ -2,6 +2,7 @@ export enum Events {
     NewTweet = "tweet",
     AuthNewTwitter = "authNewTwit",
     AuthTwitterRequest = "reequestAuthNewTwit",
+    AuthTwitterSetup = "twitterAuthSetup",
     TwitterHandleChange = "twitterHandleChange",
 }
 

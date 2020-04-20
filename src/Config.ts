@@ -10,6 +10,7 @@ export default class Config {
     public static readonly TwitterAccessSecret = "TWITTER_ACCESS_SECRET";
     public static readonly TelegramBotKey = "TELEGRAM_BOT_KEY";
     public static readonly TwitterKeyword = "TWITTER_KEYWORD";
+    public static readonly TwitterRateLimit = "TWITTER_RATELIMIT";
 
     private static readonly RequiredConfig = [
         Config.TwitterAccessKey,

@@ -23,6 +23,10 @@ export default class TwitterService implements iRunnable {
     private unauthed: { [k: string]: TwitAuth } = {};
     private stream: EventEmitter | null = null;
     private eventManager: EventManager;
+    private nextStreamSetup: number = 0;
+    private rateLimit: number;
+    private rateLimitTick: number = 0;
+    private endCooldown: number = 0;
 
     constructor(eventManager: EventManager, config: Config, userData: UserData) {
         this.twit = new Twitter({
@@ -32,10 +36,14 @@ export default class TwitterService implements iRunnable {
             access_token_secret: config.get(Config.TwitterAccessSecret)
         });
         this.keyword = config.get(Config.TwitterKeyword, "#NintendoSwitch").toLowerCase();
+        this.rateLimit = parseInt(config.get(Config.TwitterRateLimit, "1"));
+        if (this.rateLimit < 15) this.rateLimit = 15;
+
         this.userData = userData;
         this.eventManager = eventManager;
         eventManager.hookEvent(Events.TwitterHandleChange, (twitterIDs: string[]) => this.twitterHandleChange(twitterIDs));
         eventManager.hookEvent(Events.AuthTwitterRequest, (handle: string, chatID: string) => this.authNewTwitter(handle, chatID));
+        setInterval(() => this.streamCheck(), 10000);
     }
 
     private log(...args: any[]) {
@@ -45,20 +53,37 @@ export default class TwitterService implements iRunnable {
     private twitterHandleChange(twitterIDs: string[]): Promise<any> {
         this.log("Handle Change", twitterIDs);
         this.followList = [...twitterIDs];
-        return this.createStream();
+        return Promise.resolve();
     }
 
-    private createStream(): Promise<any> {
+    private streamCheck() {
+        const now = Date.now();
+        if (now > this.nextStreamSetup) {
+            this.nextStreamSetup = now + (1000 * 60 * this.rateLimit);
+            this.rateLimitTick++;
+            this.createStream(this.rateLimitTick > 3 || this.stream === null)
+                .then((msg) => {
+                    this.log("[Stream]", ...msg);
+                    this.sendUnauthedMessages();
+                    this.rateLimitTick = 0;
+                })
+                .catch(er => {
+                    this.log("[Stream]", ...er);
+                });
+        }
+    }
+
+    private createStream(force: boolean = false): Promise<any> {
         const handles = [...new Set([...this.followList, ...Object.keys(this.unauthed)])];
         handles.sort();
         const follow = handles.join(",");
-        if (follow.length < 1) {
-            this.log("Not creating stream", "No twitterIDs");
-            return Promise.resolve();
+
+        if (follow.length < 1 && !force) {
+            return Promise.reject(["Not creating", "No twitterIDs"]);
         }
-        if (follow === this.followString) {
-            this.log("Not creating stream", "Same Users");
-            return Promise.resolve();
+
+        if (follow === this.followString && !force) {
+            return Promise.reject(["Not creating", "Same Users"]);
         }
 
         this.log("Creating Stream...");
@@ -70,16 +95,24 @@ export default class TwitterService implements iRunnable {
             this.stream.destroy();
             this.stream = null;
         }
-
+        //return Promise.resolve(["FAKE Created!!"]);
         return new Promise((res) => {
+            this.endCooldown = Date.now() + 5000;
             this.twit.stream("statuses/filter", { follow }, (stream: EventEmitter) => {
                 this.stream = stream;
                 this.hookStream(stream);
-                this.log("Stream Create!!");
-                res();
+                if (force) res(["Created!!", "Forced"]);
+                else res(["Created!!"]);
             });
         })
 
+    }
+
+    private sendUnauthedMessages() {
+        Object.values(this.unauthed)
+            .forEach(unauth => {
+                this.eventManager.fireEvent(Events.AuthTwitterSetup, [unauth]);
+            });
     }
 
     private authNewTwitter(twitter: string, userID: string) {
@@ -93,7 +126,6 @@ export default class TwitterService implements iRunnable {
                         this.getUniqueToken()
                             .then(hex => {
                                 this.unauthed[twitterID] = { handle, hex, userID, twitterID };
-                                this.createStream();
                                 res({ ...this.unauthed[twitterID] });
                             })
                             .catch(rej);
@@ -101,13 +133,24 @@ export default class TwitterService implements iRunnable {
                         rej(`Could not load profile for that handle`);
                     }
                 })
-                .catch(() => rej(`Could not load profile for that handle`));
+                .catch((...args: any[]) => {
+                    this.log("[AUTH]", "Error", ...args);
+                    rej(`Could not load profile for that handle`)
+                });
         });
     }
 
     private hookStream(stream: EventEmitter) {
         stream.on("data", (tweet: tTweet) => this.onTweet(tweet));
         stream.on("error", (e: any) => this.streamError(e));
+        stream.on("end", (_e: Response) => {
+            if (Date.now() > this.endCooldown && this.stream !== null) {
+                // @ts-ignore
+                this.stream.destroy();
+                this.stream = null;
+            }
+            this.log("[Stream]", "end");
+        });
     }
 
     private streamError(error: any) {
@@ -242,8 +285,10 @@ export default class TwitterService implements iRunnable {
             const variants = m.video_info.variants
                 .filter(variant => variant.content_type === "video/mp4");
             for (const variant of variants) {
-                if ((variant.bitrate || 0) > bit) {
+                const bitty = variant.bitrate || 0;
+                if (bitty > bit) {
                     url = variant.url;
+                    bit = bitty;
                 }
             }
         }

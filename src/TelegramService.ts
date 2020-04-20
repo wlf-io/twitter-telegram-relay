@@ -20,21 +20,16 @@ export default class TelegramService implements iRunnable {
         this.eventManager = eventManager;
         this.eventManager.hookEvent(Events.NewTweet, (twitterID: string, media: TT.MessageMedia[]) => this.handleTweet(twitterID, media));
         this.eventManager.hookEvent(Events.AuthNewTwitter, (auth: TwitAuth) => this.onTwitterAuth(auth));
+        this.eventManager.hookEvent(Events.AuthTwitterSetup, (auth: TwitAuth) => this.onTwitterAuthSetup(auth));
         this.tele = new Telegraf(config.get(Config.TelegramBotKey));
         // @ts-ignore
         this.tele.context.user = null;
-        this.setupMiddleware(this.tele);
+        // this.setupMiddleware(this.tele);
         this.registerTelegramEvents();
     }
 
-    private setupMiddleware(tele: Telegraf<ContextMessageUpdate>) {
-        tele.use(async (ctx, next) => {
-            // @ts-ignore
-            ctx.user = this.userData.updateFromTelegramContext(ctx);
-            //@ts-ignore
-            await next();
-        });
-    }
+    // private setupMiddleware(tele: Telegraf<ContextMessageUpdate>) {
+    // }
 
     private log(...args: any[]) {
         console.log("[Tele]", ...args);
@@ -60,7 +55,7 @@ export default class TelegramService implements iRunnable {
     private registerTelegramEvents() {
         this.tele.start(ctx => {
             // @ts-ignore
-            const user = ctx.user;
+            const user = this.userData.updateFromTelegramContext(ctx);
             if (user) {
                 user.session.state = "start";
                 ctx.reply("Hi!\nMy main command is /follow\nPlease use /help for more info");
@@ -68,10 +63,12 @@ export default class TelegramService implements iRunnable {
         });
         this.tele.help(ctx => {
             // @ts-ignore
-            const user = ctx.user;
+            const user = this.userData.updateFromTelegramContext(ctx);
+            // this.log("[Help]", user);
             if (user) {
                 user.session.state = "help";
                 ctx.reply(this.helpText, { parse_mode: "MarkdownV2" });
+                this.log("[Help]", "[Sent]", user.name);
             }
         });
         this.tele.command("follow", ctx => this.followCommand(ctx));
@@ -80,7 +77,7 @@ export default class TelegramService implements iRunnable {
 
     private followCommand(ctx: ContextMessageUpdate) {
         // @ts-ignore
-        const user = ctx.user;
+        const user = this.userData.updateFromTelegramContext(ctx);
         if (user) {
             user.session.state = "follow";
             ctx.reply("Please enter the twitter handle you want to follow\ne\\.g\n`@my_handle`", { parse_mode: "MarkdownV2" });
@@ -89,7 +86,7 @@ export default class TelegramService implements iRunnable {
 
     private onMessage(ctx: ContextMessageUpdate) {
         // @ts-ignore
-        const user = ctx.user;
+        const user = this.userData.updateFromTelegramContext(ctx);
         if (user) {
             switch (user.session.state || "none") {
                 case "follow":
@@ -106,12 +103,8 @@ export default class TelegramService implements iRunnable {
     private setupFollow(user: User, ctx: ContextMessageUpdate) {
         this.eventManager.fireEvent(Events.AuthTwitterRequest, [ctx.message?.text, user.id])
             .then(
-                (auths: TwitAuth[]) => {
-                    auths.forEach(
-                        auth => {
-                            ctx.reply(`Please tweet this code: \`${auth.hex}\``, { parse_mode: "MarkdownV2" });
-                        }
-                    );
+                () => {
+                    ctx.reply(`Due to rate limits on the twitter api, setup for this follow can take upto 15 minutes.\n\nYou will be messaged when it is ready`);
                 }
             ).catch(
                 (e) => {
@@ -150,6 +143,12 @@ export default class TelegramService implements iRunnable {
 
     private onTwitterAuth(auth: TwitAuth): Promise<any> {
         this.tele.telegram.sendMessage(auth.userID, `Authed twitter account \`${auth.handle}\``, { parse_mode: "MarkdownV2" });
+        return Promise.resolve();
+    }
+
+    private onTwitterAuthSetup(auth: TwitAuth) {
+        this.log("Auth Setup", JSON.stringify(auth));
+        this.tele.telegram.sendMessage(auth.userID, `The twitter follow is setup\\.\n\nPlease tweet this code: \`${auth.hex}\``, { parse_mode: "MarkdownV2" });
         return Promise.resolve();
     }
 }
