@@ -1,0 +1,7 @@
+version: "3.7"
+
+services:
+    swonch_relay:
+        build: .
+        volumes: 
+            - "./dist/data:/home/node/app/dist/data"
