@@ -64,7 +64,7 @@ export default class UserData implements iRunnable {
     }
 
     getUserIDsForTwiterID(twitID: string): (User | null)[] {
-        return (this.twitterToUserList[twitID] || []).map(this.getByID);
+        return (this.twitterToUserList[twitID] || []).map(userID => this.getByID(userID));
     }
 
     getByID(id: string): User | null {
